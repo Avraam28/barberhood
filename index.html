@@ -184,6 +184,15 @@
   .bk button { background: none; border: 1px solid var(--red); color: #ff7a6e; padding: 6px 14px; border-radius: 999px; cursor: pointer; font-family: inherit; }
   .bk button:hover { background: var(--red); color: #fff; }
 
+  /* SWIPE PAGES */
+  .page-dots { position: fixed; right: 14px; top: 50%; transform: translateY(-50%); z-index: 40; display: flex; flex-direction: column; gap: 12px; }
+  .page-dots button { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--gold); background: transparent; cursor: pointer; padding: 0; transition: all .3s; }
+  .page-dots button.active { background: var(--gold); height: 24px; border-radius: 6px; }
+  .swipe-hint { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 30px); opacity: 0; z-index: 60; background: var(--card); border: 1px solid var(--gold); color: var(--text); padding: 10px 18px; border-radius: 999px; font-size: .9rem; display: flex; align-items: center; gap: 10px; transition: all .5s; pointer-events: none; }
+  .swipe-hint.show { opacity: 1; transform: translate(-50%, 0); }
+  .swipe-hint .hand { display: inline-block; animation: swipeHand 1.2s ease-in-out infinite; }
+  @keyframes swipeHand { 0%,100% { transform: translateX(8px); } 50% { transform: translateX(-8px); } }
+
   footer { border-top: 1px solid var(--line); padding: 40px 0; text-align: center; color: var(--muted); font-size: .9rem; }
   footer .logo { justify-content: center; margin-bottom: 10px; color: var(--text); }
 
@@ -374,6 +383,9 @@
   <p>Mon–Wed & Fri 8:00–19:00 · Sat 10:00–18:00 · Thu & Sun closed</p>
   <p style="margin-top:6px">© <span id="year"></span> Barberhood. All rights reserved.</p>
 </footer>
+
+<div class="page-dots" id="pageDots" role="navigation" aria-label="Pages"></div>
+<div class="swipe-hint" id="swipeHint"><span class="hand">👆</span> Swipe left or right to change page</div>
 
 <div class="modal" id="modal">
   <div class="modal-box">
@@ -601,6 +613,63 @@ function renderMyBookings() {
   });
 }
 renderMyBookings();
+
+/* ---------- SWIPE BETWEEN PAGES ---------- */
+const PAGES = [
+  { id: "top", label: "Home" }, { id: "services", label: "Prices" }, { id: "team", label: "Barbers" },
+  { id: "hours", label: "Hours" }, { id: "booking", label: "Booking" },
+].map(p => ({ ...p, el: document.getElementById(p.id) }));
+
+$("#pageDots").innerHTML = PAGES.map((p, i) => `<button data-page="${i}" aria-label="${p.label}" title="${p.label}"></button>`).join("");
+document.querySelectorAll("[data-page]").forEach(b => b.onclick = () => goPage(+b.dataset.page));
+
+function currentPage() {
+  const line = scrollY + innerHeight / 3;
+  let idx = 0;
+  PAGES.forEach((p, i) => { if (p.el.offsetTop <= line) idx = i; });
+  return idx;
+}
+function updateDots() {
+  const c = currentPage();
+  document.querySelectorAll("[data-page]").forEach((b, i) => b.classList.toggle("active", i === c));
+}
+window.addEventListener("scroll", updateDots, { passive: true });
+updateDots();
+
+function goPage(i, dir = 0) {
+  if (i < 0 || i >= PAGES.length) return;
+  const el = PAGES[i].el;
+  el.scrollIntoView({ behavior: "smooth" });
+  if (dir && el.animate && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    el.animate([{ transform: `translateX(${dir * 60}px)`, opacity: .4 }, { transform: "none", opacity: 1 }], { duration: 550, easing: "cubic-bezier(.2,.8,.2,1)" });
+  }
+}
+
+let touch = null;
+document.addEventListener("touchstart", e => {
+  if (e.touches.length !== 1 || e.target.closest(".dates, input, textarea, .modal")) { touch = null; return; }
+  touch = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+}, { passive: true });
+document.addEventListener("touchend", e => {
+  if (!touch) return;
+  const dx = e.changedTouches[0].clientX - touch.x, dy = e.changedTouches[0].clientY - touch.y, dt = Date.now() - touch.t;
+  touch = null;
+  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5 && dt < 700) {
+    const c = currentPage();
+    dx < 0 ? goPage(c + 1, 1) : goPage(c - 1, -1);
+  }
+}, { passive: true });
+
+// Show a hint once to touch-screen visitors
+if (matchMedia("(pointer: coarse)").matches) {
+  let seen = false;
+  try { seen = localStorage.getItem("bh_swipe_hint") === "1"; } catch {}
+  if (!seen) {
+    setTimeout(() => $("#swipeHint").classList.add("show"), 1800);
+    setTimeout(() => $("#swipeHint").classList.remove("show"), 6000);
+    try { localStorage.setItem("bh_swipe_hint", "1"); } catch {}
+  }
+}
 
 function confetti() {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
